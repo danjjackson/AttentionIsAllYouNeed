@@ -91,14 +91,16 @@ def create_mask(src, tgt):
     tgt_seq_len = tgt.shape[1]
 
     tgt_mask = generate_square_subsequent_mask(tgt_seq_len)
+    tgt_mask = tgt_mask.type_as(tgt)
     src_mask = torch.zeros((src_seq_len, src_seq_len)).type(torch.bool)
+    src_mask = src_mask.type_as(src)
 
     src_padding_masks = []
     tgt_padding_masks = []
     cross_padding_masks = []
 
-    src_padding_mask = (src == PAD_IDX)
-    tgt_padding_mask = (tgt == PAD_IDX)
+    src_padding = (src == PAD_IDX)
+    tgt_padding = (tgt == PAD_IDX)
 
     def make_mask(x, y):
         x = torch.unsqueeze(x, 0)
@@ -106,7 +108,7 @@ def create_mask(src, tgt):
         mask = torch.logical_or(x.transpose(0, 1), y)
         return mask
 
-    for src_row, tgt_row in zip(src_padding_mask, tgt_padding_mask):
+    for src_row, tgt_row in zip(src_padding, tgt_padding):
         src_tmp_mask = make_mask(src_row, src_row)
         tgt_tmp_mask = make_mask(tgt_row, tgt_row)
         cross_tmp_mask = make_mask(tgt_row, src_row)
@@ -116,8 +118,11 @@ def create_mask(src, tgt):
         cross_padding_masks.append(cross_tmp_mask)
 
     src_padding_mask = torch.stack(src_padding_masks)
+    src_padding_mask = src_padding_mask.type_as(src)
     tgt_padding_mask = torch.stack(tgt_padding_masks)
+    tgt_padding_mask = tgt_padding_mask.type_as(tgt)
     cross_padding_mask = torch.stack(cross_padding_masks)
+    cross_padding_mask = cross_padding_mask.type_as(src)
 
     return src_mask, tgt_mask, src_padding_mask, tgt_padding_mask, cross_padding_mask
 
