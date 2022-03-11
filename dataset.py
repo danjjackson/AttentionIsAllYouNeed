@@ -83,8 +83,8 @@ def create_data_loaders(batch_size=128):
         return src_batch, tgt_batch
 
     train_iter, val_iter, test_iter = Multi30k()
-    train_dataloader = DataLoader(train_iter, batch_size=batch_size, collate_fn=collate_fn)
-    valid_dataloader = DataLoader(val_iter, batch_size=batch_size, collate_fn=collate_fn)
-    test_dataloader = DataLoader(test_iter, batch_size=batch_size, collate_fn=collate_fn)
+    train_dataloader = DataLoader(train_iter, batch_size=batch_size, collate_fn=collate_fn, num_workers=8)
+    valid_dataloader = DataLoader(val_iter, batch_size=batch_size, collate_fn=collate_fn, num_workers=8)
+    test_dataloader = DataLoader(test_iter, batch_size=batch_size, collate_fn=collate_fn, num_workers=8)
 
     return train_dataloader, valid_dataloader, test_dataloader, SRC_VOCAB_SIZE, TGT_VOCAB_SIZE
