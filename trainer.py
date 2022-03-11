@@ -153,7 +153,7 @@ def train_model(args=None):
 
     val_result = trainer.test(model, test_dataloaders=val_loader, verbose=False)
     test_result = trainer.test(model, test_dataloaders=test_loader, verbose=False)
-    result = {"test": test_result[0]["test_acc"], "val": val_result[0]["val_acc"]}
+    result = {"test": test_result[0]["test_loss"], "val": val_result[0]["val_loss"]}
 
     return model, result
 
