@@ -65,20 +65,30 @@ class Transformer(pl.LightningModule):
         src_mask, tgt_mask, src_padding_mask, tgt_padding_mask, cross_padding_mask = create_mask(src, tgt)
         output = self.forward(src, tgt, src_mask, tgt_mask, src_padding_mask, tgt_padding_mask, cross_padding_mask)
         loss = self.loss(output.transpose(1, 2), tgt)
-        return loss
+        accuracy = self._accuracy(output, tgt)
+        return loss, accuracy
+
+    def _accuracy(self, output, tgt):
+
+        num_words = sum(tgt != PAD_IDX)
+
+        return True
 
     def training_step(self, batch, batch_idx):
-        loss = self._calculate_loss(batch)
-        self.log(f'train_loss', loss)
+        loss, accuracy = self._calculate_loss(batch)
+        self.log(f'train_loss', loss, on_step=False, on_epoch=True)
+        self.log(f'train_accuracy', accuracy, on_step=False, on_epoch=True)
         return loss  # Return tensor to call ".backward" on
 
     def validation_step(self, batch, batch_idx):
-        loss = self._calculate_loss(batch)
-        self.log(f'val_loss', loss)
+        loss, accuracy = self._calculate_loss(batch)
+        self.log(f'val_loss', loss, on_step=False, on_epoch=True)
+        self.log(f'val_accuracy', accuracy, on_step=False, on_epoch=True)
 
     def test_step(self, batch, batch_idx):
-        loss = self._calculate_loss(batch)
-        self.log(f'test_loss', loss)
+        loss, accuracy = self._calculate_loss(batch)
+        self.log(f'test_loss', loss, on_step=False, on_epoch=True)
+        self.log(f'test_accuracy', accuracy, on_step=False, on_epoch=True)
 
 
 def generate_square_subsequent_mask(sz):
