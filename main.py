@@ -5,7 +5,8 @@ import pytorch_lightning as pl
 
 from trainer import train_model
 
-def select_gpu(gpu_id: (int, str, list)):
+
+def select_gpu(gpu_id):
     if isinstance(gpu_id, (list, tuple)):
         gpu_id = ",".join([str[i] for i in gpu_id])
     else:
@@ -19,7 +20,7 @@ def parse_args(cmdline):
     required = parser.add_argument_group('required arguments')
     optional = parser.add_argument_group('optional arguments')
 
-    required.add_argument('--gpu', default=0, type=int, metavar='N', required=True,
+    required.add_argument('--gpu', default=-1, type=int, metavar='N', required=True,
                           help='Index of the GPU to use. Use -1 to use CPU only')
     optional.add_argument("--batch_size", default=64, type=int, required=False)
     _args = parser.parse_args(cmdline)

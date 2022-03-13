@@ -1,4 +1,5 @@
 import torch
+import spacy
 
 from torchtext.data import get_tokenizer
 from torchtext.datasets import Multi30k
@@ -57,7 +58,7 @@ def create_data_loaders(batch_size=128):
 
     token_transforms = dict()
 
-    token_transforms[SRC_LANGUAGE] = get_tokenizer('spacy', language='de_core_news_sm')
+    # token_transforms[SRC_LANGUAGE] = get_tokenizer('spacy', language='de_core_news_sm')
     token_transforms[TGT_LANGUAGE] = get_tokenizer('spacy', language='en_core_web_sm')
 
     vocab_transforms = build_vocab(token_transforms)

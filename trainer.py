@@ -68,11 +68,17 @@ class Transformer(pl.LightningModule):
         accuracy = self._accuracy(output, tgt)
         return loss, accuracy
 
-    def _accuracy(self, output, tgt):
+    @staticmethod
+    def _accuracy(output, tgt):
 
+        # predictions = mo
+        padding = sum(tgt == PAD_IDX)
         num_words = sum(tgt != PAD_IDX)
+        correct_words = sum(output == tgt)
 
-        return True
+        accuracy = (correct_words - padding)/num_words
+
+        return accuracy
 
     def training_step(self, batch, batch_idx):
         loss, accuracy = self._calculate_loss(batch)
