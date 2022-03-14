@@ -69,13 +69,13 @@ class Transformer(pl.LightningModule):
     @staticmethod
     def _accuracy(logits, tgt):
 
-        padding = sum(tgt == PAD_IDX)
-        num_words = sum(tgt != PAD_IDX)
+        num_words = torch.count_nonzero(tgt)
+        # num_padding = torch.numel(tgt) - num_words
 
-        predictions = torch.argmax(logits.transpose(1, 2), dim = 1)
-        correct_words = sum(predictions == tgt)
+        predictions = torch.argmax(logits, dim=2)
+        correct_words = torch.sum(predictions == tgt)
 
-        accuracy = (correct_words - padding)/num_words
+        accuracy = correct_words/torch.numel(tgt)  # num_words
 
         return accuracy
 
