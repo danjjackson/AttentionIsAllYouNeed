@@ -60,8 +60,6 @@ class Transformer(pl.LightningModule):
 
     def _calculate_loss(self, batch):
         src, tgt = batch
-        src = src.transpose(0, 1)
-        tgt = tgt.transpose(0, 1)
         src_mask, tgt_mask, src_padding_mask, tgt_padding_mask, cross_padding_mask = create_mask(src, tgt)
         output = self.forward(src, tgt, src_mask, tgt_mask, src_padding_mask, tgt_padding_mask, cross_padding_mask)
         loss = self.loss(output.transpose(1, 2), tgt)
@@ -69,12 +67,14 @@ class Transformer(pl.LightningModule):
         return loss, accuracy
 
     @staticmethod
-    def _accuracy(output, tgt):
+    def _accuracy(logits, tgt):
 
         # predictions = mo
         padding = sum(tgt == PAD_IDX)
         num_words = sum(tgt != PAD_IDX)
-        correct_words = sum(output == tgt)
+
+        predictions = torch.argmax(logits.transpose(1, 2), dim = 1)
+        correct_words = sum(predictions == tgt)
 
         accuracy = (correct_words - padding)/num_words
 

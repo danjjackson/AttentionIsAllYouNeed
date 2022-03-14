@@ -58,7 +58,7 @@ def create_data_loaders(batch_size=128):
 
     token_transforms = dict()
 
-    # token_transforms[SRC_LANGUAGE] = get_tokenizer('spacy', language='de_core_news_sm')
+    token_transforms[SRC_LANGUAGE] = get_tokenizer('spacy', language='de_core_news_sm')
     token_transforms[TGT_LANGUAGE] = get_tokenizer('spacy', language='en_core_web_sm')
 
     vocab_transforms = build_vocab(token_transforms)
@@ -79,8 +79,8 @@ def create_data_loaders(batch_size=128):
             src_batch.append(text_transform[SRC_LANGUAGE](src_sample.rstrip("\n")))
             tgt_batch.append(text_transform[TGT_LANGUAGE](tgt_sample.rstrip("\n")))
 
-        src_batch = pad_sequence(src_batch, padding_value=PAD_IDX)
-        tgt_batch = pad_sequence(tgt_batch, padding_value=PAD_IDX)
+        src_batch = pad_sequence(src_batch, batch_first=True, padding_value=PAD_IDX)
+        tgt_batch = pad_sequence(tgt_batch, batch_first=True, padding_value=PAD_IDX)
         return src_batch, tgt_batch
 
     train_iter, val_iter, test_iter = Multi30k()
