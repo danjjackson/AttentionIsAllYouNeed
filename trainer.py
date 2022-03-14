@@ -69,7 +69,6 @@ class Transformer(pl.LightningModule):
     @staticmethod
     def _accuracy(logits, tgt):
 
-        # predictions = mo
         padding = sum(tgt == PAD_IDX)
         num_words = sum(tgt != PAD_IDX)
 
