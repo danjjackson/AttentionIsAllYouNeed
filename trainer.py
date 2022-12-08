@@ -11,9 +11,6 @@ from dataset import create_data_loaders
 
 PAD_IDX = 0
 CHECKPOINT_PATH = 'saved_models'
-save_name = 'test'
-device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
-
 
 class Transformer(pl.LightningModule):
 
@@ -37,10 +34,12 @@ class Transformer(pl.LightningModule):
         # self.acc = pl.metrics.Accuracy()
 
     def _make_model(self):
-        self.model = TransformerModel(self.hparams.n_src,
-                                      self.hparams.n_tgt,
-                                      self.hparams.embed_dim,
-                                      self.hparams.model_dim)
+        self.model = TransformerModel(
+            self.hparams.n_src,
+            self.hparams.n_tgt,
+            self.hparams.embed_dim,
+            self.hparams.model_dim)
+
         for p in self.model.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform(p)
@@ -53,9 +52,11 @@ class Transformer(pl.LightningModule):
         optimizer = optim.Adam(self.parameters(), lr=self.hparams.lr)
 
         # Apply lr scheduler per step
-        lr_scheduler = CosineWarmupScheduler(optimizer,
-                                             warmup=self.hparams.warmup,
-                                             max_iters=self.hparams.max_iters)
+        lr_scheduler = CosineWarmupScheduler(
+            optimizer,
+            warmup=self.hparams.warmup,
+            max_iters=self.hparams.max_iters)
+
         return [optimizer], [{'scheduler': lr_scheduler, 'interval': 'step'}]
 
     def _calculate_loss(self, batch):
@@ -142,27 +143,36 @@ def create_mask(src, tgt):
     return src_mask, tgt_mask, src_padding_mask, tgt_padding_mask, cross_padding_mask
 
 
-def train_model(args=None):
+def train_model(config, num_epochs):
 
-    train_loader, val_loader, test_loader, n_src, n_tgt = create_data_loaders(batch_size=args.batch_size)
+    if config.gpu == 'mps' and torch.backends.mps.is_available():
+        device = torch.device(config.gpu)
+    elif config.gpu == 'cuda' and torch.cuda.is_available():
+        device = torch.device(config.gpu)
+    else:
+        device = torch.device("cpu")
+
+    print(f'Using device: {device}')
+
+    train_loader, val_loader, test_loader, n_src, n_tgt = create_data_loaders(batch_size=config.training_params.batch_size)
 
     # Create a PyTorch Lightning trainer with the generation callback
 
-    trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, save_name),                          # Where to save models
-                         gpus=1 if str(device) == "cuda:0" else 0,                                           # We run on a single GPU (if possible)
-                         max_epochs=180,                                                                     # How many epochs to train for if no patience is set
-                         callbacks=[ModelCheckpoint(save_weights_only=True, mode="max", monitor="val_loss"),  # Save the best checkpoint based on the maximum val_acc recorded. Saves only weights and not optimizer
-                                    LearningRateMonitor("epoch")],                                           # Log learning rate every epoch
-                         progress_bar_refresh_rate=1)
-    model = Transformer(embed_dim=512,
-                        model_dim=512,
-                        n_src=n_src,
-                        n_tgt=n_tgt,
-                        num_heads=8,
-                        num_layers=6,
-                        lr=5e-4,
-                        warmup=100,
-                        max_iters=trainer.max_epochs+10)
+    trainer = pl.Trainer(
+        default_root_dir=os.path.join(CHECKPOINT_PATH, config.save_name),            # Where to save models
+        gpus=1 if str(device) != 'cpu' else 0,                                       # We run on a single GPU (if possible)
+        max_epochs=num_epochs,                                                       # How many epochs to train for if no patience is set
+        callbacks=[
+            ModelCheckpoint(save_weights_only=True, mode="max", monitor="val_loss"), # Save the best checkpoint based on the maximum val_acc recorded. Saves only weights and not optimizer
+            LearningRateMonitor("epoch")],                                           # Log learning rate every epoch
+        progress_bar_refresh_rate=1)
+
+    model = Transformer(
+        **config.model_params,
+        **config.optimizer_params,
+        n_src=n_src,
+        n_tgt=n_tgt, 
+        max_iters=num_epochs+10)
 
     trainer.fit(model, train_loader, val_loader)
 
@@ -171,6 +181,3 @@ def train_model(args=None):
     result = {"test": test_result[0]["test_loss"], "val": val_result[0]["val_loss"]}
 
     return model, result
-
-
-
