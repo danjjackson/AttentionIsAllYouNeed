@@ -1,13 +1,19 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
-
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import os
 
+import torch
+import torch.nn as nn
+
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks import \
+    LearningRateMonitor, ModelCheckpoint, TQDMProgressBar, EarlyStopping
+
+
+from einops import rearrange
+
 from model import TransformerModel, CosineWarmupScheduler
-from dataset import create_data_loaders
+# from test import Seq2SeqTransformer
+from dataset import Vocab
+from const import *
 
 PAD_IDX = 0
 CHECKPOINT_PATH = 'saved_models'
@@ -143,41 +149,79 @@ def create_mask(src, tgt):
     return src_mask, tgt_mask, src_padding_mask, tgt_padding_mask, cross_padding_mask
 
 
-def train_model(config, num_epochs):
+def train_model(
+    model_name,
+    src_language,
+    tgt_language,
+    gpu,
+    batch_size,
+    num_epochs,
+    **model_kwargs):
 
-    if config.gpu == 'mps' and torch.backends.mps.is_available():
-        device = torch.device(config.gpu)
-    elif config.gpu == 'cuda' and torch.cuda.is_available():
-        device = torch.device(config.gpu)
+    print(model_kwargs)
+
+
+    if gpu == 'mps' and torch.backends.mps.is_available():
+        device = torch.device(gpu)
+    elif gpu == 'cuda' and torch.cuda.is_available():
+        device = torch.device(gpu)
     else:
         device = torch.device("cpu")
 
     print(f'Using device: {device}')
 
-    train_loader, val_loader, test_loader, n_src, n_tgt = create_data_loaders(batch_size=config.training_params.batch_size)
+    vocabulary = Vocab(src_language, tgt_language)
+
+    data_loaders = vocabulary.create_data_loaders(batch_size)
 
     # Create a PyTorch Lightning trainer with the generation callback
 
     trainer = pl.Trainer(
-        default_root_dir=os.path.join(CHECKPOINT_PATH, config.save_name),            # Where to save models
-        gpus=1 if str(device) != 'cpu' else 0,                                       # We run on a single GPU (if possible)
-        max_epochs=num_epochs,                                                       # How many epochs to train for if no patience is set
+        default_root_dir=os.path.join(CHECKPOINT_PATH, model_name),
+        gpus=1 if str(device) == "cuda:0" else 0,
+        max_epochs=num_epochs,
         callbacks=[
-            ModelCheckpoint(save_weights_only=True, mode="max", monitor="val_loss"), # Save the best checkpoint based on the maximum val_acc recorded. Saves only weights and not optimizer
-            LearningRateMonitor("epoch")],                                           # Log learning rate every epoch
-        progress_bar_refresh_rate=1)
+            ModelCheckpoint(
+                save_weights_only=True,
+                mode="max",
+                monitor="val_accuracy"),
+            LearningRateMonitor("epoch"),
+            TQDMProgressBar(refresh_rate=1), # Log learning rate every epoch
+            EarlyStopping(
+                monitor='val_accuracy',
+                mode='max',
+                patience=3)])
+    
+    # Optional logging argument that we don't need
+    trainer.logger._default_hp_metric = None
 
-    model = Transformer(
-        **config.model_params,
-        **config.optimizer_params,
-        n_src=n_src,
-        n_tgt=n_tgt, 
-        max_iters=num_epochs+10)
+    pl_model = Transformer(
+        src_vocab_size=vocabulary.src_vocab_size,
+        tgt_vocab_size=vocabulary.tgt_vocab_size,
+        batch_size=batch_size,
+        max_iters=num_epochs * len(data_loaders['train']),
+        **model_kwargs)
 
-    trainer.fit(model, train_loader, val_loader)
+    trainer.fit(
+        pl_model,
+        data_loaders['train'],
+        data_loaders['valid'])
 
-    val_result = trainer.test(model, test_dataloaders=val_loader, verbose=False)
-    test_result = trainer.test(model, test_dataloaders=test_loader, verbose=False)
-    result = {"test": test_result[0]["test_loss"], "val": val_result[0]["val_loss"]}
+    val_result = trainer.test(
+        pl_model,
+        dataloaders=data_loaders['valid'],
+        verbose=False)
 
-    return model, result
+    test_result = trainer.test(
+        pl_model,
+        dataloaders=data_loaders['test'],
+        verbose=False)
+
+    result = {
+        "validation accuracy": val_result[0]["test_accuracy"],
+        "test_accuracy": test_result[0]["test_accuracy"]}
+
+    print(result)
+
+    return pl_model, vocabulary, result
+

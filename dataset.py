@@ -6,86 +6,140 @@ from torchtext.datasets import Multi30k
 
 from torchtext.vocab import build_vocab_from_iterator
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
+from const import SPECIALS, PAD_IDX, UNK_IDX, BOS_IDX, EOS_IDX
 
-SRC_LANGUAGE = 'de'
-TGT_LANGUAGE = 'en'
+class Multi30kDataset(Dataset):
+    def __init__(self, mode, src_language, tgt_language):
+        self.dataset_list = list(Multi30k(
+            split=mode,
+            language_pair=(
+                src_language,
+                tgt_language
+            )
+        ))
 
-PAD_IDX, UNK_IDX, BOS_IDX, EOS_IDX = 0, 1, 2, 3
+    def __len__(self):
+        return len(self.dataset_list)
 
-
-def build_vocab(token_transforms):
-
-    vocab_transform = {}
-    special_symbols = ['<pad>', '<unk>' '<bos>', '<eos>']
-
-    # helper function to yield list of tokens
-    def yield_tokens(data_iter, ln: str):
-        language_index = {SRC_LANGUAGE: 0, TGT_LANGUAGE: 1}
-
-        for data_sample in data_iter:
-            yield token_transforms[ln](data_sample[language_index[ln]])
-
-    for language in [SRC_LANGUAGE, TGT_LANGUAGE]:
-        train_iter = Multi30k(split='train', language_pair=(SRC_LANGUAGE, TGT_LANGUAGE))
-        vocab_transform[language] = build_vocab_from_iterator(yield_tokens(train_iter, language),
-                                                              min_freq=1,
-                                                              specials=special_symbols,
-                                                              special_first=True)
-    for ln in [SRC_LANGUAGE, TGT_LANGUAGE]:
-        vocab_transform[ln].set_default_index(UNK_IDX)
-
-    return vocab_transform
+    def __getitem__(self, idx):
+        src, tgt = self.dataset_list[idx]
+        return src, tgt
 
 
-# helper function to club together sequential operations
-def sequential_transforms(*transforms):
-    def func(txt_input):
-        for transform in transforms:
-            txt_input = transform(txt_input)
-        return txt_input
-    return func
+class Vocab:
+    def __init__(self, src_language, tgt_language):
+        self.src_language = src_language
+        self.tgt_language = tgt_language
+        self.token_transforms = self.get_token_transforms()
+        self.vocab_transforms = self.build_vocab()
+        self.src_vocab_size = len(self.vocab_transforms[src_language])
+        self.tgt_vocab_size = len(self.vocab_transforms[tgt_language])
+        self.text_transform = self.build_text_transform()
 
+    def get_token_transforms(self):
 
-# function to add BOS/EOS and create tensor for input sequence indices
-def tensor_transform(token_ids):
-    return torch.cat((torch.tensor([BOS_IDX]),
-                      torch.tensor(token_ids),
-                      torch.tensor([EOS_IDX])))
+        token_transforms = {
+            'de': get_tokenizer('spacy', language='de_core_news_sm'),
+            'en': get_tokenizer('spacy', language='en_core_web_sm')
+        }
+        return token_transforms
 
+    def build_vocab(self):
 
-def create_data_loaders(batch_size=128):
+        vocab_transform = {}
+        language_index = {self.src_language: 0, self.tgt_language: 1}
 
-    token_transforms = dict()
+        # helper function to yield list of tokens
+        def yield_tokens(data_iter, tokeniser, language_idx):
 
-    token_transforms[SRC_LANGUAGE] = get_tokenizer('spacy', language='de_core_news_sm')
-    token_transforms[TGT_LANGUAGE] = get_tokenizer('spacy', language='en_core_web_sm')
+            for data_sample in data_iter:
+                yield tokeniser(data_sample[language_idx])
 
-    vocab_transforms = build_vocab(token_transforms)
-    SRC_VOCAB_SIZE = len(vocab_transforms[SRC_LANGUAGE])
-    TGT_VOCAB_SIZE = len(vocab_transforms[TGT_LANGUAGE])
+        for language in [self.src_language, self.tgt_language]:
+            train_iter = Multi30k(
+                split='train',
+                language_pair=(
+                    self.src_language,
+                    self.tgt_language
+                )
+            )
 
-    # src and tgt language text transforms to convert raw strings into tensors indices
-    text_transform = {}
-    for language in [SRC_LANGUAGE, TGT_LANGUAGE]:
-        text_transform[language] = sequential_transforms(token_transforms[language],  # Tokenisation
-                                                         vocab_transforms[language],  # Numericalisation
-                                                         tensor_transform)  # Add BOS/EOS and create tensor
+            vocab_transform[language] = build_vocab_from_iterator(
+                yield_tokens(
+                    train_iter,
+                    self.token_transforms[language],
+                    language_index[language]),
+                min_freq=1,
+                specials=SPECIALS,
+                special_first=True)
 
-    # function to collate data samples into batch tensors
-    def collate_fn(batch):
+            vocab_transform[language].set_default_index(UNK_IDX)
+
+        return vocab_transform
+
+    @staticmethod
+    def tensor_transform(token_ids):
+        return torch.cat(
+            (torch.tensor([BOS_IDX]),
+             torch.tensor(token_ids),
+             torch.tensor([EOS_IDX]))
+        )
+
+    @staticmethod
+    def sequential_transforms(*transforms):
+        def func(txt_input):
+            for transform in transforms:
+                txt_input = transform(txt_input)
+            return txt_input
+
+        return func
+
+    def build_text_transform(self):
+        text_transform = {}
+        for language in [self.src_language, self.tgt_language]:
+            text_transform[language] = self.sequential_transforms(
+                self.token_transforms[language],  # Tokenisation
+                self.vocab_transforms[language],  # Numericalisation
+                self.tensor_transform
+            )
+        return text_transform
+
+    def collate_fn(self, batch, batch_first=True):
         src_batch, tgt_batch = [], []
         for src_sample, tgt_sample in batch:
-            src_batch.append(text_transform[SRC_LANGUAGE](src_sample.rstrip("\n")))
-            tgt_batch.append(text_transform[TGT_LANGUAGE](tgt_sample.rstrip("\n")))
+            src_batch.append(
+                self.text_transform[self.src_language](src_sample.rstrip("\n"))
+            )
+            tgt_batch.append(
+                self.text_transform[self.tgt_language](tgt_sample.rstrip("\n"))
+            )
 
-        src_batch = pad_sequence(src_batch, batch_first=True, padding_value=PAD_IDX)
-        tgt_batch = pad_sequence(tgt_batch, batch_first=True, padding_value=PAD_IDX)
+        src_batch = pad_sequence(
+            src_batch,
+            batch_first=batch_first,
+            padding_value=PAD_IDX
+        )
+        tgt_batch = pad_sequence(
+            tgt_batch,
+            batch_first=batch_first,
+            padding_value=PAD_IDX
+        )
         return src_batch, tgt_batch
+    def create_data_loaders(self, batch_size):
 
-    train_iter, val_iter, test_iter = Multi30k()
-    train_dataloader = DataLoader(train_iter, batch_size=batch_size, collate_fn=collate_fn)
-    valid_dataloader = DataLoader(val_iter, batch_size=batch_size, collate_fn=collate_fn)
-    test_dataloader = DataLoader(test_iter, batch_size=batch_size, collate_fn=collate_fn)
+        # function to collate data samples into batch tensor
+        data_loaders = {
+            dataset: DataLoader(
+                Multi30kDataset(
+                    dataset,
+                    self.src_language,
+                    self.tgt_language
+                ),
+                batch_size=batch_size,
+                collate_fn=self.collate_fn,
+                num_workers=16
+            ) for dataset in ['train', 'valid', 'test']
+        }
 
-    return train_dataloader, valid_dataloader, test_dataloader, SRC_VOCAB_SIZE, TGT_VOCAB_SIZE
+        return data_loaders

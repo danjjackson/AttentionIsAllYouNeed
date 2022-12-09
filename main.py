@@ -12,4 +12,8 @@ if __name__ == "__main__":
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
-    model, result = train_model(config, args.num_epochs)
+
+    for arg in vars(args):
+        config[arg] = getattr(args, arg)
+    print(config)
+    model, result = train_model(**config)
